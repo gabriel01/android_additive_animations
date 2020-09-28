@@ -2,35 +2,62 @@ package at.wirecube.additiveanimations.additive_animator.sequence;
 
 import java.util.List;
 
-class PlaySequentiallyAnimationSequence extends AnimationSequence {
-    private final List<AnimationSequence> animations;
-    private long delay = 0;
+import at.wirecube.additiveanimations.additive_animator.AnimationEndListener;
 
-    public PlaySequentiallyAnimationSequence(List<AnimationSequence> animations) {
-        this.animations = animations;
-    }
 
-    @Override
-    public void start() {
-        long totalDelay = 0;
-        for(AnimationSequence sequence : animations) {
-            sequence.setDelayInSequence(totalDelay + this.delay);
-            totalDelay += sequence.getTotalDurationInSequence();
-            sequence.start();
-        }
-    }
+class PlaySequentiallyAnimationSequence<T extends AnimationSequence> extends AnimationSequence<T> {
 
-    @Override
-    public void setDelayInSequence(long delay) {
-        this.delay = delay;
-    }
+	private long delay = 0;
 
-    @Override
-    public long getTotalDurationInSequence() {
-        long totalDelay = delay;
-        for(AnimationSequence sequence : animations) {
-            totalDelay += sequence.getTotalDurationInSequence();
-        }
-        return totalDelay + this.delay;
-    }
+
+	public PlaySequentiallyAnimationSequence() {
+
+	}
+
+	public PlaySequentiallyAnimationSequence(List<T> animations) {
+
+		this.animations.addAll(animations);
+	}
+
+	@Override
+	public void setDelayInSequence(long delay) {
+
+		this.delay = delay;
+	}
+
+	@Override
+	public long getTotalDurationInSequence() {
+
+		long totalDelay = delay;
+		for (int i = 0; i < animations.size(); i++) {
+			AnimationSequence sequence = animations.get(i);
+			totalDelay += sequence.getTotalDurationInSequence();
+		}
+		return totalDelay + this.delay;
+	}
+
+
+
+	@Override
+	public T addEndAction(AnimationEndListener endListener) {
+
+		if (animations.size() > 0) {
+			animations.get(animations.size() - 1).addEndAction(endListener);
+		}
+		return self();
+	}
+
+	@Override
+	public void start() {
+
+		long totalDelay = 0;
+
+		for (AnimationSequence sequence : animations) {
+
+			long totalDurationInSequence = sequence.getTotalDurationInSequence();
+			sequence.setDelayInSequence(totalDelay + this.delay);
+			totalDelay += totalDurationInSequence;
+			sequence.start();
+		}
+	}
 }

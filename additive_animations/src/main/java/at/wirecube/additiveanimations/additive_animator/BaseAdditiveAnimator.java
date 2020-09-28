@@ -37,7 +37,7 @@ import at.wirecube.additiveanimations.helper.evaluators.PathEvaluator;
  *            <b><code>public class MyViewAnimator extends BaseAdditiveAnimator{@literal <}MyViewAnimator, View{@literal >}</code></b>
  * @param <V> The type of object to be animated.
  */
-public abstract class BaseAdditiveAnimator<T extends BaseAdditiveAnimator, V extends Object> extends AnimationSequence {
+public abstract class BaseAdditiveAnimator<T extends BaseAdditiveAnimator, V extends Object> extends AnimationSequence<T> {
 
     protected T mParent = null; // not null when this animator was queued using `then()` chaining.
     protected V mCurrentTarget = null;
@@ -79,13 +79,6 @@ public abstract class BaseAdditiveAnimator<T extends BaseAdditiveAnimator, V ext
     private static long sDefaultAnimationDuration = 300;
     private static TimeInterpolator sDefaultInterpolator = EaseInOutPathInterpolator.create();
 
-    protected T self() {
-        try {
-            return (T) this;
-        } catch (ClassCastException e) {
-            throw new RuntimeException("Could not cast to subclass. Did you forget to implement `newInstance()`?");
-        }
-    }
 
     public static void cancelAnimationsForObject(Object target) {
         RunningAnimationsManager.from(target).cancelAllAnimations();
@@ -530,6 +523,7 @@ public abstract class BaseAdditiveAnimator<T extends BaseAdditiveAnimator, V ext
         return self();
     }
 
+    @Override
     public T addEndAction(final AnimationEndListener r) {
         getValueAnimator().addListener(new AnimatorListenerAdapter() {
             boolean wasCancelled = false;
@@ -547,6 +541,7 @@ public abstract class BaseAdditiveAnimator<T extends BaseAdditiveAnimator, V ext
         return self();
     }
 
+    @Override
     public T addStartAction(final Runnable r) {
         getValueAnimator().addListener(new AnimatorListenerAdapter() {
             @Override
@@ -731,7 +726,7 @@ public abstract class BaseAdditiveAnimator<T extends BaseAdditiveAnimator, V ext
 
         // invalidate this animator to prevent incorrect usage:
         // TODO: get rid of this flag. Animators should simply not become invalid.
-        mIsValid = false;
+       // mIsValid = false;
     }
 
     void setAnimationGroup(AdditiveAnimatorGroup group) {

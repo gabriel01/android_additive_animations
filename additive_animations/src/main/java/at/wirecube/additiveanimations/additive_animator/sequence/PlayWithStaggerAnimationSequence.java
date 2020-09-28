@@ -1,18 +1,26 @@
 package at.wirecube.additiveanimations.additive_animator.sequence;
 
 import java.util.Arrays;
-import java.util.List;
 
-public class PlayWithStaggerAnimationSequence extends AnimationSequence {
+import at.wirecube.additiveanimations.additive_animator.AnimationEndListener;
 
-    private final List<AnimationSequence> animations;
+
+public class PlayWithStaggerAnimationSequence <T extends AnimationSequence>extends AnimationSequence<T> {
+
     private final long stagger;
     private long delayInSequence;
 
-    public PlayWithStaggerAnimationSequence(long stagger, AnimationSequence... animations) {
+
+    public PlayWithStaggerAnimationSequence(long stagger) {
         this.stagger = stagger;
-        this.animations = Arrays.asList(animations);
     }
+
+    public PlayWithStaggerAnimationSequence(long stagger, T... animations) {
+        this.stagger = stagger;
+        this.animations.addAll(Arrays.asList(animations));
+    }
+
+
 
 
     @Override
@@ -42,5 +50,17 @@ public class PlayWithStaggerAnimationSequence extends AnimationSequence {
             currentStagger += stagger;
         }
         return longestDuration + delayInSequence;
+    }
+
+    @Override
+    public T addStartAction(Runnable r) {
+
+        throw new IllegalStateException("Not yet implemented");
+    }
+
+    @Override
+    public T addEndAction(AnimationEndListener endListener) {
+
+        throw new IllegalStateException("Not yet implemented");
     }
 }
