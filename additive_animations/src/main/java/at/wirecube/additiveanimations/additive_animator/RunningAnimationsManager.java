@@ -35,235 +35,244 @@ import at.wirecube.additiveanimations.additive_animator.animation_set.AnimationS
  */
 public class RunningAnimationsManager<T> {
 
-    private class AnimationInfo {
-        int numAnimations = 0;
-        Float lastTargetValue = null;
-        Float queuedTargetValue = null;
-    }
+	private static final Map<Object, RunningAnimationsManager> sStateManagers = new HashMap<>();
+	final Set<AdditiveAnimationAccumulator> mAdditiveAnimationAccumulators = new HashSet<>();
+	private final AccumulatedAnimationValueManager mAccumulator = new AccumulatedAnimationValueManager();
+	private final T                 mAnimationTarget;
+	private final Map<String, AnimationInfo> mAnimationInfos = new HashMap<>();
+	private       boolean           mUseHardwareLayer = false;
+	private       AnimationState<T> mCurrentState     = null;
+	private RunningAnimationsManager(T animationTarget) {
 
-    private static final Map<Object, RunningAnimationsManager> sStateManagers = new HashMap<>();
+		mAnimationTarget = animationTarget;
+	}
 
-    public static final <T> RunningAnimationsManager<T> from(T target) {
-        if (target == null) {
-            return null;
-        }
-        RunningAnimationsManager<T> animator = sStateManagers.get(target);
-        if (animator == null) {
-            animator = new RunningAnimationsManager<T>(target);
-            sStateManagers.put(target, animator);
-        }
-        return animator;
-    }
+	static <T> RunningAnimationsManager<T> from(T target) {
 
-    public static final AccumulatedAnimationValueManager getAccumulatedProperties(View v) {
-        return from(v).mAccumulator;
-    }
+		if (target == null) {
+			return null;
+		}
+		RunningAnimationsManager<T> animator = sStateManagers.get(target);
+		if (animator == null) {
+			animator = new RunningAnimationsManager<T>(target);
+			sStateManagers.put(target, animator);
+		}
+		return animator;
+	}
 
-    private final AccumulatedAnimationValueManager mAccumulator = new AccumulatedAnimationValueManager();
+	static AccumulatedAnimationValueManager getAccumulatedProperties(View v) {
 
-    private final T mAnimationTarget;
-    private boolean mUseHardwareLayer = false;
-    private AnimationState<T> mCurrentState = null;
+		return from(v).mAccumulator;
+	}
 
-    final Set<AdditiveAnimationAccumulator> mAdditiveAnimationAccumulators = new HashSet<>();
+	public static final <T> boolean hasRunningAnimations(T target) {
 
-    private final Map<String, AnimationInfo> mAnimationInfos = new HashMap<>();
+		return sStateManagers.get(target) != null;
+	}
 
-    private RunningAnimationsManager(T animationTarget) {
-        mAnimationTarget = animationTarget;
-    }
+	public void setCurrentState(AnimationState<T> currentState) {
 
-    public void setCurrentState(AnimationState<T> currentState) {
-        this.mCurrentState = currentState;
-    }
+		this.mCurrentState = currentState;
+	}
 
-    public static final <T> boolean hasRunningAnimations(T target) {
+	private AnimationInfo getAnimationInfo(String tag, boolean addIfNeeded) {
 
-        return sStateManagers.get(target) != null;
-    }
+		AnimationInfo info = mAnimationInfos.get(tag);
+		if (info == null && addIfNeeded) {
+			info = new AnimationInfo();
+			mAnimationInfos.put(tag, info);
+		}
+		return info;
+	}
 
+	void addAnimation(AdditiveAnimationAccumulator accumulator, AdditiveAnimation animation) {
+		// immediately add to our list of pending animators
+		mAdditiveAnimationAccumulators.add(accumulator);
+		accumulator.addAnimation(animation);
+		getAnimationInfo(animation.getTag(), true).queuedTargetValue = animation.getTargetValue();
+	}
 
-    private AnimationInfo getAnimationInfo(String tag, boolean addIfNeeded) {
-        AnimationInfo info = mAnimationInfos.get(tag);
-        if (info == null && addIfNeeded) {
-            info = new AnimationInfo();
-            mAnimationInfos.put(tag, info);
-        }
-        return info;
-    }
+	void onAnimationAccumulatorEnd(AdditiveAnimationAccumulator accumulator, boolean didCancel) {
+		// make sure to remove the accumulator to avoid memory leaks:
+		mAdditiveAnimationAccumulators.remove(accumulator);
+		removeStateManagerIfAccumulatorSetIsEmpty();
 
-    void addAnimation(AdditiveAnimationAccumulator accumulator, AdditiveAnimation animation) {
-        // immediately add to our list of pending animators
-        mAdditiveAnimationAccumulators.add(accumulator);
-        accumulator.addAnimation(animation);
-        getAnimationInfo(animation.getTag(), true).queuedTargetValue = animation.getTargetValue();
-    }
+		for (AdditiveAnimation animation : accumulator.getAnimations(mAnimationTarget)) {
+			if (mCurrentState != null && mCurrentState.getAnimationEndAction() != null && mCurrentState.shouldRunEndListener(animation.getAssociatedAnimationState())) {
+				mCurrentState.getAnimationEndAction().onEnd(mAnimationTarget, didCancel);
+			}
+			if (didCancel) {
+				continue;
+			}
+			AnimationInfo info = getAnimationInfo(animation.getTag(), false);
+			if (info == null) {
+				continue;
+			}
+			info.numAnimations = Math.max(info.numAnimations - 1, 0);
+			if (info.numAnimations == 0) {
+				mAnimationInfos.remove(animation.getTag());
+			}
+		}
+	}
 
-    void onAnimationAccumulatorEnd(AdditiveAnimationAccumulator accumulator, boolean didCancel) {
-        // make sure to remove the accumulator to avoid memory leaks:
-        mAdditiveAnimationAccumulators.remove(accumulator);
-        removeStateManagerIfAccumulatorSetIsEmpty();
+	void onAnimationAccumulatorStart(AdditiveAnimationAccumulator accumulator) {
 
-        for (AdditiveAnimation animation : accumulator.getAnimations(mAnimationTarget)) {
-            if (mCurrentState != null && mCurrentState.getAnimationEndAction() != null && mCurrentState.shouldRunEndListener(animation.getAssociatedAnimationState())) {
-                mCurrentState.getAnimationEndAction().onEnd(mAnimationTarget, didCancel);
-            }
-            if (didCancel) {
-                continue;
-            }
-            AnimationInfo info = getAnimationInfo(animation.getTag(), false);
-            if (info == null) {
-                continue;
-            }
-            info.numAnimations = Math.max(info.numAnimations - 1, 0);
-            if (info.numAnimations == 0) {
-                mAnimationInfos.remove(animation.getTag());
-            }
-        }
-    }
+		Collection<AdditiveAnimation> animations = accumulator.getAnimations(mAnimationTarget);
+		for (AdditiveAnimation animation : animations) {
+			if (animation.getAssociatedAnimationState() == null) {
+				continue;
+			}
+			if (animation.getAssociatedAnimationState().shouldRun(mCurrentState)) {
+				if (animation.getAssociatedAnimationState().getAnimationStartAction() != null) {
+					animation.getAssociatedAnimationState().getAnimationStartAction().onStart(mAnimationTarget);
+				}
+			} else {
+				accumulator.removeAnimation(animation.getTag(), animation.getTarget());
+			}
+		}
+		if (accumulator.getAnimations().isEmpty()) {
+			mAdditiveAnimationAccumulators.remove(accumulator);
+			removeStateManagerIfAccumulatorSetIsEmpty();
+		} else {
+			// only now are we expecting updates from this applier
+			if (mUseHardwareLayer && mAnimationTarget instanceof View) {
+				if (((View) mAnimationTarget).getLayerType() != View.LAYER_TYPE_HARDWARE) {
+					((View) mAnimationTarget).setLayerType(View.LAYER_TYPE_HARDWARE, null);
+				}
+			}
+		}
+	}
 
-    void onAnimationAccumulatorStart(AdditiveAnimationAccumulator accumulator) {
-        Collection<AdditiveAnimation> animations = accumulator.getAnimations(mAnimationTarget);
-        for (AdditiveAnimation animation : animations) {
-            if (animation.getAssociatedAnimationState() == null) {
-                continue;
-            }
-            if (animation.getAssociatedAnimationState().shouldRun(mCurrentState)) {
-                if (animation.getAssociatedAnimationState().getAnimationStartAction() != null) {
-                    animation.getAssociatedAnimationState().getAnimationStartAction().onStart(mAnimationTarget);
-                }
-            } else {
-                accumulator.removeAnimation(animation.getTag(), animation.getTarget());
-            }
-        }
-        if (accumulator.getAnimations().isEmpty()) {
-            mAdditiveAnimationAccumulators.remove(accumulator);
-            removeStateManagerIfAccumulatorSetIsEmpty();
-        } else {
-            // only now are we expecting updates from this applier
-            if (mUseHardwareLayer && mAnimationTarget instanceof View) {
-                if (((View) mAnimationTarget).getLayerType() != View.LAYER_TYPE_HARDWARE) {
-                    ((View) mAnimationTarget).setLayerType(View.LAYER_TYPE_HARDWARE, null);
-                }
-            }
-        }
-    }
+	/**
+	 * Updates {@link AdditiveAnimation#getStartValue()}
+	 * to the last value that was specified as a target. This is only relevant when chaining or reusing animations,
+	 * since the state of the object might have changed since the animation was created.
+	 * This will also update the accumulator if it doesn't already contain an entry for this animation,
+	 * using the current property value (if a Property is available)
+	 */
+	void prepareAnimationStart(AdditiveAnimation<T> animation) {
+		// TODO: can we speed up this lookup?
+		AccumulatedAnimationValue av = mAccumulator.getAccumulatedAnimationValue(animation);
 
-    /**
-     * Updates {@link AdditiveAnimation#getStartValue()}
-     * to the last value that was specified as a target. This is only relevant when chaining or reusing animations,
-     * since the state of the object might have changed since the animation was created.
-     * This will also update the accumulator if it doesn't already contain an entry for this animation,
-     * using the current property value (if a Property is available)
-     */
-    void prepareAnimationStart(AdditiveAnimation<T> animation) {
-        // TODO: can we speed up this lookup?
-        AccumulatedAnimationValue av = mAccumulator.getAccumulatedAnimationValue(animation);
+		AnimationInfo info = getAnimationInfo(animation.getTag(), true);
+		if (getLastTargetValue(animation.getTag()) == null || info.numAnimations == 0) {
+			// In case we don't currently have an animation on this property, let's make sure
+			// the start value matches the current model value:
+			Float currentModelValue = getActualAnimationStartValue(animation);
+			if (currentModelValue != null) {
+				animation.setStartValue(currentModelValue);
+			}
+			av.tempValue = animation.getStartValue();
+		} else {
+			animation.setStartValue(getLastTargetValue(animation.getTag()));
+		}
+		if (animation.isBy()) {
+			// by-animations have to calculate their target value after the actual start value has been computed.
+			animation.setTargetValue(animation.getStartValue() + animation.getByValue());
+		}
+		animation.setAccumulatedValue(av);
+		info.numAnimations++;
+		info.lastTargetValue = animation.getTargetValue();
+	}
 
-        AnimationInfo info = getAnimationInfo(animation.getTag(), true);
-        if (getLastTargetValue(animation.getTag()) == null || info.numAnimations == 0) {
-            // In case we don't currently have an animation on this property, let's make sure
-            // the start value matches the current model value:
-            Float currentModelValue = getActualAnimationStartValue(animation);
-            if (currentModelValue != null) {
-                animation.setStartValue(currentModelValue);
-            }
-            av.tempValue = animation.getStartValue();
-        } else {
-            animation.setStartValue(getLastTargetValue(animation.getTag()));
-        }
-        if (animation.isBy()) {
-            // by-animations have to calculate their target value after the actual start value has been computed.
-            animation.setTargetValue(animation.getStartValue() + animation.getByValue());
-        }
-        animation.setAccumulatedValue(av);
-        info.numAnimations++;
-        info.lastTargetValue = animation.getTargetValue();
-    }
+	void cancelAllAnimations() {
 
-    public void cancelAllAnimations() {
-        Collection<AdditiveAnimationAccumulator> accumulators = new HashSet<>(mAdditiveAnimationAccumulators);
-        for (AdditiveAnimationAccumulator additiveAnimationAccumulator : accumulators) {
-            additiveAnimationAccumulator.cancel(mAnimationTarget);
-        }
-        mAdditiveAnimationAccumulators.clear();
-        mAnimationInfos.clear();
-        sStateManagers.remove(mAnimationTarget);
-        // reset hardware layer
-        if (mUseHardwareLayer && mAnimationTarget instanceof View) {
-            ((View) mAnimationTarget).setLayerType(View.LAYER_TYPE_NONE, null);
-        }
-    }
+		Collection<AdditiveAnimationAccumulator> accumulators = new HashSet<>(mAdditiveAnimationAccumulators);
+		for (AdditiveAnimationAccumulator additiveAnimationAccumulator : accumulators) {
+			additiveAnimationAccumulator.cancel(mAnimationTarget);
+		}
+		mAdditiveAnimationAccumulators.clear();
+		mAnimationInfos.clear();
+		sStateManagers.remove(mAnimationTarget);
+		// reset hardware layer
+		if (mUseHardwareLayer && mAnimationTarget instanceof View) {
+			((View) mAnimationTarget).setLayerType(View.LAYER_TYPE_NONE, null);
+		}
+	}
 
-    public void cancelAnimation(String propertyName) {
-        List<AdditiveAnimationAccumulator> cancelledAppliers = new ArrayList<>();
-        for (AdditiveAnimationAccumulator applier : mAdditiveAnimationAccumulators) {
-            if (applier.removeAnimation(propertyName, mAnimationTarget)) {
-                cancelledAppliers.add(applier);
-            }
-        }
-        mAnimationInfos.remove(propertyName);
-        mAdditiveAnimationAccumulators.removeAll(cancelledAccumulators);
-        removeStateManagerIfAccumulatorSetIsEmpty();
-    }
+	void cancelAnimation(String propertyName) {
 
-    private void removeStateManagerIfAccumulatorSetIsEmpty() {
-        if (mAdditiveAnimationAccumulators.isEmpty()) {
-            sStateManagers.remove(mAnimationTarget);
-            // reset hardware layer
-            if (mUseHardwareLayer && mAnimationTarget instanceof View) {
-                ((View) mAnimationTarget).setLayerType(View.LAYER_TYPE_NONE, null);
-            }
-        }
-    }
+		List<AdditiveAnimationAccumulator> cancelledAccumulators = new ArrayList<>();
+		for (AdditiveAnimationAccumulator accumulator : mAdditiveAnimationAccumulators) {
+			if (accumulator.removeAnimation(propertyName, mAnimationTarget)) {
+				cancelledAccumulators.add(accumulator);
+			}
+		}
+		mAnimationInfos.remove(propertyName);
+		mAdditiveAnimationAccumulators.removeAll(cancelledAccumulators);
+		removeStateManagerIfAccumulatorSetIsEmpty();
+	}
 
-    /**
-     * The distinction between this and {@link RunningAnimationsManager#getQueuedPropertyValue(String)} is important when chaining animations:
-     * When an animation has been then-chained, it is not counted as <i>started</i>, but <i>queued</i> until start() is called.
-     *
-     * @return The value of the last <b>started</b> animation target for this property.
-     */
-    Float getLastTargetValue(String propertyName) {
-        AnimationInfo info = getAnimationInfo(propertyName, false);
-        if (info == null) {
-            return null;
-        }
-        return info.lastTargetValue;
-    }
+	private void removeStateManagerIfAccumulatorSetIsEmpty() {
 
-    /**
-     * The distinction between this and {@link RunningAnimationsManager#getLastTargetValue(String)} is important when chaining animations:
-     * When an animation has been then-chained, it is not counted as <i>started</i>, but <i>queued</i> until start() is called.
-     *
-     * @return The last <i>queued</i> animation target for this property during then()-building, even before the animation has been started.
-     */
-    Float getQueuedPropertyValue(String propertyName) {
-        AnimationInfo info = getAnimationInfo(propertyName, false);
-        if (info == null) {
-            return null;
-        }
-        return info.queuedTargetValue;
-    }
+		if (mAdditiveAnimationAccumulators.isEmpty()) {
+			sStateManagers.remove(mAnimationTarget);
+			// reset hardware layer
+			if (mUseHardwareLayer && mAnimationTarget instanceof View) {
+				((View) mAnimationTarget).setLayerType(View.LAYER_TYPE_NONE, null);
+			}
+		}
+	}
 
-    Float getActualPropertyValue(Property<T, Float> property) {
-        Float lastTarget = getLastTargetValue(property.getName());
-        if (lastTarget == null) {
-            lastTarget = property.get(mAnimationTarget);
-        }
-        return lastTarget;
-    }
+	/**
+	 * The distinction between this and {@link RunningAnimationsManager#getQueuedPropertyValue(String)} is important when chaining animations:
+	 * When an animation has been then-chained, it is not counted as <i>started</i>, but <i>queued</i> until start() is called.
+	 *
+	 * @return The value of the last <b>started</b> animation target for this property.
+	 */
+	Float getLastTargetValue(String propertyName) {
 
-    private Float getActualAnimationStartValue(AdditiveAnimation<T> animation) {
-        if (animation.getProperty() != null) {
-            return getActualPropertyValue(animation.getProperty());
-        } else {
-            // TODO: there should be a way for subclasses to implement the 'getting' of a custom value.
-            return null;
-        }
-    }
+		AnimationInfo info = getAnimationInfo(propertyName, false);
+		if (info == null) {
+			return null;
+		}
+		return info.lastTargetValue;
+	}
 
-    void setUseHardwareLayer(boolean useHardwareLayer) {
-        mUseHardwareLayer = useHardwareLayer;
-    }
+	/**
+	 * The distinction between this and {@link RunningAnimationsManager#getLastTargetValue(String)} is important when chaining animations:
+	 * When an animation has been then-chained, it is not counted as <i>started</i>, but <i>queued</i> until start() is called.
+	 *
+	 * @return The last <i>queued</i> animation target for this property during then()-building, even before the animation has been started.
+	 */
+	Float getQueuedPropertyValue(String propertyName) {
+
+		AnimationInfo info = getAnimationInfo(propertyName, false);
+		if (info == null) {
+			return null;
+		}
+		return info.queuedTargetValue;
+	}
+
+	Float getActualPropertyValue(Property<T, Float> property) {
+
+		Float lastTarget = getLastTargetValue(property.getName());
+		if (lastTarget == null) {
+			lastTarget = property.get(mAnimationTarget);
+		}
+		return lastTarget;
+	}
+
+	private Float getActualAnimationStartValue(AdditiveAnimation<T> animation) {
+
+		if (animation.getProperty() != null) {
+			return getActualPropertyValue(animation.getProperty());
+		} else {
+			// TODO: there should be a way for subclasses to implement the 'getting' of a custom value.
+			return null;
+		}
+	}
+
+	void setUseHardwareLayer(boolean useHardwareLayer) {
+
+		mUseHardwareLayer = useHardwareLayer;
+	}
+
+	private class AnimationInfo {
+
+		int   numAnimations     = 0;
+		Float lastTargetValue   = null;
+		Float queuedTargetValue = null;
+	}
 
 }

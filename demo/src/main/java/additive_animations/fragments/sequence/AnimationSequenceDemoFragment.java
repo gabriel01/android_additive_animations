@@ -9,8 +9,6 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 
-import com.google.gson.Gson;
-
 import java.util.HashMap;
 import java.util.Map;
 
@@ -47,7 +45,7 @@ public class AnimationSequenceDemoFragment extends Fragment {
 	private void buildAnimationSequenceDemo() {
 		// using a json string for illustration purposes for how to dynamically build animations from a string representation.
 		String                demoJson             = "{\"animationType\":\"Spawn\",\"children\":[{\"animationType\":\"Sequence\",\"children\":[{\"animationType\":\"AtOnce\",\"animations\":[{\"by\":true,\"propertyName\":\"x\",\"value\":100.0},{\"by\":true,\"propertyName\":\"y\",\"value\":0.0}]},{\"animationType\":\"AtOnce\",\"animations\":[{\"by\":true,\"propertyName\":\"x\",\"value\":-100.0},{\"by\":true,\"propertyName\":\"y\",\"value\":0.0}]}]},{\"animationType\":\"Sequence\",\"children\":[{\"animationType\":\"AtOnce\",\"animations\":[{\"by\":true,\"propertyName\":\"x\",\"value\":0.0},{\"by\":true,\"propertyName\":\"y\",\"value\":100.0}]},{\"animationType\":\"AtOnce\",\"animations\":[{\"by\":true,\"propertyName\":\"x\",\"value\":0.0},{\"by\":true,\"propertyName\":\"y\",\"value\":-100.0}]}]}]}";
-		AnimationSequenceJson animationDescription = new Gson().fromJson(demoJson, AnimationSequenceJson.class);
+//		AnimationSequenceJson animationDescription = new Gson().fromJson(demoJson, AnimationSequenceJson.class);
 
 
 
